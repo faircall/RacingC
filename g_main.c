@@ -6,6 +6,9 @@
 #include <math.h>
 #include "SDL.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #define SCREENWIDTH 800
 #define SCREENHEIGHT 600
 
@@ -27,7 +30,10 @@
 #define TRACKWIDTH 40
 #define TRACKHEIGHT 40 //temp doubled
 
+#define MPI 3.1415926535
+
 typedef unsigned char byte;
+typedef unsigned int uint;
 
 //this could be packed into an int, it's worth noting
 
@@ -56,7 +62,9 @@ typedef struct {
 typedef struct {
     Vec2 position;
     Vec2 heading;
+    float angle;
     int radius;
+    float speed;
 } Car;
 
 typedef enum {
@@ -78,7 +86,7 @@ Vec2 init_vec2(float x, float y);
 Car init_car(float x, float y, float x_heading, float y_heading);
 
 
-void move_car(Track *tracks, Car *car, float car_speed, float dt, int *score_p1, int *tracks_destroye);
+void move_car(Track *tracks, Car *car, float dt, int *score_p1);
 
 void reset_car(Car *car);
 
@@ -95,6 +103,24 @@ void draw_scores(SDL_Renderer *renderer, int score_p1);
 void draw_tracks(SDL_Renderer *renderer, Track *tracks);
 
 Track init_track(int x, int y);
+
+float deg_to_rad(float deg)
+{
+    float result = MPI*deg/180.0f;
+    return result;
+}
+
+void draw_texture(SDL_Renderer *renderer, SDL_Texture *texture, int x, int y, int width, int height)
+{
+    SDL_Rect dest = {x - width/2.0f, y - width/2.0f, width, height};
+    SDL_RenderCopy(renderer, texture, NULL, &dest);
+}
+
+void draw_rotated_texture(SDL_Renderer *renderer, SDL_Texture *texture, int x, int y, int width, int height, float angle)
+{
+    SDL_Rect dest = {x - width/2.0f, y - width/2.0f, width, height};
+    SDL_RenderCopyEx(renderer, texture, NULL, &dest, angle + 270.0f, NULL, SDL_FLIP_HORIZONTAL | SDL_FLIP_VERTICAL);
+}
 
 void reset_tracks(Track *tracks, int track_design[])
 {
@@ -130,7 +156,7 @@ int main(int argc, char **argv)
     Color white = {0xff, 0xff, 0xff, 0x00};
 
     
-    Car car = init_car(SCREENWIDTH/2, SCREENHEIGHT/2, -1.0f, 0.5f);
+    Car car = init_car(SCREENWIDTH/2 + 50.0f, SCREENHEIGHT/2, -1.0f, 0.5f);
 
     int track[TRACKROWS * TRACKCOLS] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
@@ -164,7 +190,24 @@ int main(int argc, char **argv)
     
     reset_tracks(tracks, track);
 
+    int imx, imy, imn; 
+    unsigned char *car_image = stbi_load("car_top.png", &imx, &imy, &imn, 0);
 
+    //load file using SDL here
+    unsigned int rmask, gmask, bmask, amask;
+    rmask = 0x000000ff;
+    gmask = 0x0000ff00;
+    bmask = 0x00ff0000;
+    amask = 0xff000000;
+    SDL_Surface *car_surface = SDL_CreateRGBSurfaceFrom((void*)car_image, imx, imy, 32, 4*imx, rmask, gmask, bmask, amask);
+    SDL_Texture *car_texture = SDL_CreateTextureFromSurface(renderer, car_surface);
+
+    if (car_texture == NULL) {
+	fprintf(stderr, "Failed to create texture\n", SDL_GetError());
+	SDL_Quit();
+    }
+
+    SDL_FreeSurface(car_surface);
 
     
     while (game_running) {
@@ -175,7 +218,12 @@ int main(int argc, char **argv)
 	
 	SDL_Event event;
 	SDL_PollEvent(&event);
-	
+
+	if (event.type == SDL_KEYDOWN) {
+	    if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+		SDL_Quit();
+	    }
+	}
 	
 	if (event.type == SDL_QUIT) {
 	    game_running = 0;
@@ -196,8 +244,25 @@ int main(int argc, char **argv)
 	    }
 	} else if (gamestate == GAME_PLAYING) {
 	    
-	
-	    move_car(tracks, &car, car_speed, dt, &score_p1, &tracks_destroyed);
+	    //get keys pressed, later
+	    //just rotate for now
+	    //car.angle += (100.0f*dt);
+	    const Uint8 *keys = SDL_GetKeyboardState(NULL);
+	    //car.speed = 0.0f;
+	    if (keys[SDL_SCANCODE_A]) {
+		car.angle -= (100.0f*dt);
+	    }
+	    if (keys[SDL_SCANCODE_D]) {
+		car.angle += (100.0f*dt);
+	    }
+	    if (keys[SDL_SCANCODE_W]) {
+		car.speed += car_speed*dt;
+	    }
+	    if (keys[SDL_SCANCODE_S]) {
+		car.speed -= car_speed*dt;
+	    }
+	    
+	    move_car(tracks, &car, dt, &score_p1);
 	    SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0x00, 0x00);
 	    SDL_RenderClear(renderer);
 	    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0x00);
@@ -205,18 +270,12 @@ int main(int argc, char **argv)
 
 	    draw_tracks(renderer, tracks);
 	
-	    draw_rect(renderer, car.position.x, car.position.y, 5.0f, 5.0f, white);
+	    //draw_rect(renderer, car.position.x, car.position.y, 5.0f, 5.0f, white);
+	    draw_rotated_texture(renderer, car_texture, car.position.x, car.position.y, imx, imy, car.angle);
+	    draw_rect(renderer, car.position.x + car.heading.x*10.0f, car.position.y + car.heading.y*10.0f, 5.0f, 5.0f, white);
 	    draw_scores(renderer, score_p1, score_p2);
-	    if (score_p1 == 5 || score_p2 == 5) {
-		gamestate = GAME_OVER;
-	    }
-	    if (tracks_destroyed == total_tracks) {
-		tracks_destroyed = 0;
-		reset_tracks(tracks, empty_rows);
-		reset_car(&car);
-		gamestate = GAME_START;
-		score_p1 = 0;
-	    }
+
+	    
 	} else if (gamestate == GAME_OVER) {
 	    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0x00);
 	    SDL_RenderClear(renderer);
@@ -292,31 +351,39 @@ Car init_car(float x, float y, float x_heading, float y_heading)
     result.position = position;
     result.heading = heading;
     result.radius = car_radius;
+    result.angle = 0.0f;
+    result.speed = 0.0f;
     return result;
 }
 
-void move_car(Track *tracks, Car *car, float car_speed, float dt, int *score_p1, int *tracks_destroyed)
+void move_car(Track *tracks, Car *car, float dt, int *score_p1)
 {
+    
+    
     Vec2 previous_position = {car->position.x, car->position.y};
-
-    car->position.x += car_speed*car->heading.x*dt;
-    car->position.y += car_speed*car->heading.y*dt;
+    float angle_rad = deg_to_rad(car->angle);
+    car->heading.x = cos(angle_rad);
+    car->heading.y = sin(angle_rad);
+    car->position.x += car->speed*car->heading.x*dt;
+    car->position.y += car->speed*car->heading.y*dt;
 
     //reflect along y axis
     //we should really make sure we *bounce back straight away* rather than waiting to update next frame, because it might not move us enough
     //if less time passes
+    #if 0
     if (car->position.x <=0 || car->position.x >= (SCREENWIDTH - car->radius)) {
 	car->heading.x *= -1.0f;
-	car->position.x += car_speed * car->heading.x * dt;
+	car->position.x += car->speed * car->heading.x * dt;
     }
 
 
 
     if (car->position.y <= 0 || car->position.y >= (SCREENHEIGHT - car->radius)) {
 	car->heading.y *= -1.0f;
-	car->position.y += car_speed * car->heading.y * dt;
+	car->position.y += car->speed * car->heading.y * dt;
 
     }
+    #endif
     
 
 
@@ -340,33 +407,25 @@ void move_car(Track *tracks, Car *car, float car_speed, float dt, int *score_p1,
 	if (track.exists) {
 	    //use our algorithm here
 	    
-	    int both_failed = 1;
-	    Track neighbour_track_col = tracks[track_index_y*TRACKCOLS + prev_index_x];
-	    Track neighbour_track_row = tracks[prev_index_y*TRACKCOLS + track_index_x];
 
-	    if (prev_index_x != track_index_x) {
-		//came in horizontally
-		if (neighbour_track_row.exists) {
-		    car->heading.x *= -1.0f;
-		    both_failed = 0;
-		}
-	    }
-	    if (prev_index_y != track_index_y) {
-		//cam in vertically
-		if (neighbour_track_col.exists) {
-		    
-		    car->heading.y *= -1.0f;
-		    both_failed = 0;
-		}
-	    }
-	    if (both_failed) {
-		car->heading.x *= -1.0f;
+	    //actually we should reflect,
+	    //rather than negate the vector?
+	    if (prev_index_x == track_index_x) {
 		car->heading.y *= -1.0f;
 	    }
+	    if (prev_index_y == track_index_y) {
+		car->heading.x *= -1.0f;
+	    }
 	    //car->heading.x *= -1.0f;
-	    track.exists = 0;
-	    (*tracks_destroyed) += 1;
-	    tracks[track_index_y*TRACKCOLS + track_index_x] = track;
+	    //car->heading.y *= -1.0f;
+
+	    car->position.x += car->speed*car->heading.x*dt;
+	    car->position.y += car->speed*car->heading.y*dt;
+
+	    //car->heading.x *= -1.0f;
+	    //track.exists = 0;
+	    
+	    //tracks[track_index_y*TRACKCOLS + track_index_x] = track;
 	}
     }
     
@@ -393,7 +452,7 @@ void move_car(Track *tracks, Car *car, float car_speed, float dt, int *score_p1,
 
 void reset_car(Car *car)
 {
-    car->position.x = SCREENWIDTH/2;
+    car->position.x = SCREENWIDTH/2 + 50.0f;
     car->position.y = SCREENHEIGHT/2;
     car->heading.x *= -1.0f;
 }
