@@ -6,74 +6,42 @@
 #include <math.h>
 #include "SDL.h"
 
+#include "r_graphics.h"
+#include "r_math.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define SCREENWIDTH 800
-#define SCREENHEIGHT 600
+
+
+
+
 
 
 
 //TODO:
-//normalalzing acutally seems to make it less fun?
-//fix the issue of collisions to be more robust
-//have a size on the tracks
-//have a gameover state
-//remove the cruft about scores from pong
+// track tiles and wall tiles
+// and finish line tiles
+// no turn while still
+// normalalzing acutally seems to make it less fun?
+// fix the issue of collisions to be more robust
+// have a size on the tracks...(what did i mean by this?)
+// have a gameover state
+// -- this will be a finish line
+// remove the cruft about scores from pong
+// optimize the track drawing
+// add local multiplayer
 
 
 
-#define TRACKGAP 2
-#define TRACKCOLS 20
-#define TRACKROWS 15 
 
-#define TRACKWIDTH 40
-#define TRACKHEIGHT 40 //temp doubled
 
-#define MPI 3.1415926535
-
-typedef unsigned char byte;
-typedef unsigned int uint;
-
-//this could be packed into an int, it's worth noting
-
-typedef struct {
-    int exists;
-    int width;
-    int height;
-    int x;
-    int y;
-} Track;
-
-typedef struct {
-    byte r;
-    byte g;
-    byte b;
-    byte a;
-} Color;
-
-typedef struct {
-    float x;
-    float y;
-} Vec2;
+// this could be packed into an int, it's worth noting
 
 
 
-typedef struct {
-    Vec2 position;
-    Vec2 heading;
-    float angle;
-    int radius;
-    float speed;
-} Car;
+///// Declarations
 
-typedef enum {
-    GAME_START,
-    GAME_PLAYING,
-    GAME_OVER
-} GAMESTATE;
 
-Vec2 vec_normalize(Vec2 in);
 
 void draw_rect(SDL_Renderer *renderer, int x, int y, int w, int h, Color color);
 
@@ -81,54 +49,40 @@ Color init_color(byte red, byte green, byte blue, byte alpha);
 
 Vec2 init_vec2(float x, float y);
 
-
-
 Car init_car(float x, float y, float x_heading, float y_heading);
-
 
 void move_car(Track *tracks, Car *car, float dt, int *score_p1);
 
 void reset_car(Car *car);
 
 
-
-float distance(float x, float y);
-
-float float_min(float x, float y);
-
-float float_max(float x, float y);
-
 void draw_scores(SDL_Renderer *renderer, int score_p1);
 
 void draw_tracks(SDL_Renderer *renderer, Track *tracks);
 
-Track init_track(int x, int y);
+Track init_track(int x, int y, int exists);
 
-float deg_to_rad(float deg)
-{
-    float result = MPI*deg/180.0f;
-    return result;
-}
+/////
 
-void draw_texture(SDL_Renderer *renderer, SDL_Texture *texture, int x, int y, int width, int height)
-{
-    SDL_Rect dest = {x - width/2.0f, y - width/2.0f, width, height};
-    SDL_RenderCopy(renderer, texture, NULL, &dest);
-}
 
-void draw_rotated_texture(SDL_Renderer *renderer, SDL_Texture *texture, int x, int y, int width, int height, float angle)
-{
-    SDL_Rect dest = {x - width/2.0f, y - width/2.0f, width, height};
-    SDL_RenderCopyEx(renderer, texture, NULL, &dest, angle + 270.0f, NULL, SDL_FLIP_HORIZONTAL | SDL_FLIP_VERTICAL);
-}
 
-void reset_tracks(Track *tracks, int track_design[])
+
+
+void reset_tracks(Track *tracks, int track_design[], Car *car)
 {
     
     for (int i = 0; i < TRACKROWS; i++) {
 	for (int j = 0; j < TRACKCOLS; j++) {
-	    Track track = init_track(j*(TRACKWIDTH) , i*(TRACKHEIGHT), track_design[i*TRACKCOLS + j]);
-	    tracks[i*TRACKCOLS + j] = track;
+	    if (track_design[i*TRACKCOLS + j] == 2) {
+		// we effectively 'insert' the car here via its pointer
+		car->position.x = (float)(j*(TRACKWIDTH)) + 0.5*TRACKWIDTH;
+		car->position.y = (float)(i*(TRACKHEIGHT)) + 0.5*TRACKHEIGHT;
+		Track track = init_track(j*TRACKWIDTH, i*TRACKHEIGHT, 0);
+		tracks[i*TRACKCOLS + j] = track;
+	    } else {
+		Track track = init_track(j*(TRACKWIDTH) , i*(TRACKHEIGHT), track_design[i*TRACKCOLS + j]);
+		tracks[i*TRACKCOLS + j] = track;
+	    }
 	  
 	}
     }
@@ -166,16 +120,20 @@ int main(int argc, char **argv)
 	1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1,
 	1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1,
 	1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1,
-	1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+	1, 2, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,//added a 2
 	1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
 	1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1,
 	1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1,
-	1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1,
-	1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1,
+	1, 0, 3, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1,
+	1, 0, 3, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
     };
 
-    float car_speed = 300.0f;
+    
+    float car_speed_min_for_turn = 2.5f;
+    float car_turn_speed = 200.0f;
+
+    float car_speed = 2000.0f;
     float dt;
     unsigned int current_time, time_elapsed, last_time = 0;
     int score_p1 = 0;
@@ -188,7 +146,7 @@ int main(int argc, char **argv)
     
     Track *tracks = (Track*)malloc(sizeof(Track) * TRACKROWS * TRACKCOLS);
     
-    reset_tracks(tracks, track);
+    reset_tracks(tracks, track, &car);
 
     int imx, imy, imn; 
     unsigned char *car_image = stbi_load("car_top.png", &imx, &imy, &imn, 0);
@@ -249,11 +207,15 @@ int main(int argc, char **argv)
 	    //car.angle += (100.0f*dt);
 	    const Uint8 *keys = SDL_GetKeyboardState(NULL);
 	    //car.speed = 0.0f;
-	    if (keys[SDL_SCANCODE_A]) {
-		car.angle -= (100.0f*dt);
-	    }
-	    if (keys[SDL_SCANCODE_D]) {
-		car.angle += (100.0f*dt);
+
+	    // only apply a turn if the car is moving
+	    if (abs(car.speed) >= car_speed_min_for_turn) {
+		if (keys[SDL_SCANCODE_A]) {
+		    car.angle -= (car_turn_speed*dt);
+		}
+		if (keys[SDL_SCANCODE_D]) {
+		    car.angle += (car_turn_speed*dt);
+		}
 	    }
 	    if (keys[SDL_SCANCODE_W]) {
 		car.speed += car_speed*dt;
@@ -261,7 +223,15 @@ int main(int argc, char **argv)
 	    if (keys[SDL_SCANCODE_S]) {
 		car.speed -= car_speed*dt;
 	    }
-	    
+
+	    if (car.speed*car.speed > 0.05f) {
+		// apply friction
+		// this is limiting the max speed?
+		car.speed -= (0.002*car.speed);
+	    } else {
+		car.speed = 0.0f;
+	    }
+
 	    move_car(tracks, &car, dt, &score_p1);
 	    SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0x00, 0x00);
 	    SDL_RenderClear(renderer);
@@ -306,39 +276,8 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void draw_rect(SDL_Renderer *renderer, int x, int y, int w, int h, Color color)
-{
-    SDL_Rect temp_rect;
-    Color old_color;
-    SDL_GetRenderDrawColor(renderer, &old_color.r, &old_color.g, &old_color.b, &old_color.a);
-    temp_rect.x = x;
-    temp_rect.y = y;
-    temp_rect.w = w;
-    temp_rect.h = h;
-    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-    SDL_RenderFillRect(renderer, &temp_rect);
-    SDL_SetRenderDrawColor(renderer, old_color.r, old_color.g, old_color.b, old_color.a);
-    
-}
 
-Color init_color(byte red, byte green, byte blue, byte alpha)
-{
-    Color result;
-    result.r = red;
-    result.g = green;
-    result.b = blue;
-    result.a = alpha;
 
-    return result;
-}
-
-Vec2 init_vec2(float x, float y)
-{
-    Vec2 result;
-    result.x = x;
-    result.y = y;
-    return result;
-}
 
 
 Car init_car(float x, float y, float x_heading, float y_heading)
@@ -364,8 +303,10 @@ void move_car(Track *tracks, Car *car, float dt, int *score_p1)
     float angle_rad = deg_to_rad(car->angle);
     car->heading.x = cos(angle_rad);
     car->heading.y = sin(angle_rad);
-    car->position.x += car->speed*car->heading.x*dt;
-    car->position.y += car->speed*car->heading.y*dt;
+
+    // use a 'next position' variable instead
+    Vec2 next_position = {car->position.x + car->speed*car->heading.x*dt, car->position.y + car->speed*car->heading.y*dt};
+
 
     //reflect along y axis
     //we should really make sure we *bounce back straight away* rather than waiting to update next frame, because it might not move us enough
@@ -399,10 +340,11 @@ void move_car(Track *tracks, Car *car, float dt, int *score_p1)
     int prev_index_x = (int)((int)(previous_position.x)/(int)TRACKWIDTH);//col;
     int prev_index_y = (int)((int)(previous_position.y)/(int)TRACKHEIGHT);//row;
     
-    int track_index_x = (int)((int)(car->position.x)/(int)TRACKWIDTH);//col
-    int track_index_y = (int)((int)(car->position.y)/(int)TRACKHEIGHT);//row
+    int track_index_x = (int)((int)(next_position.x)/(int)TRACKWIDTH);//col
+    int track_index_y = (int)((int)(next_position.y)/(int)TRACKHEIGHT);//row
     
-    if (track_index_y < TRACKROWS && track_index_x < TRACKCOLS) {
+    if (track_index_y < TRACKROWS && track_index_x < TRACKCOLS &&
+	track_index_y >= 0 && track_index_x >= 0) {
 	Track track = tracks[track_index_y*TRACKCOLS + track_index_x];
 	if (track.exists) {
 	    //use our algorithm here
@@ -410,42 +352,45 @@ void move_car(Track *tracks, Car *car, float dt, int *score_p1)
 
 	    //actually we should reflect,
 	    //rather than negate the vector?
+	    // what?
+	    // instead think of 4 cases of the tile itself,
+	    // make a normal vector
+	    // then dot with the heading
+
+	    //edge cases
+	    
+	    //if (track_index_x == 0)
+
+	    
 	    if (prev_index_x == track_index_x) {
 		car->heading.y *= -1.0f;
+		//car->heading.y = 0.0f;
 	    }
 	    if (prev_index_y == track_index_y) {
 		car->heading.x *= -1.0f;
+		//car->heading.x = 0.0f;
 	    }
+
+	    // what are the other cases?
+	    
 	    //car->heading.x *= -1.0f;
 	    //car->heading.y *= -1.0f;
-
 	    car->position.x += car->speed*car->heading.x*dt;
 	    car->position.y += car->speed*car->heading.y*dt;
+
 
 	    //car->heading.x *= -1.0f;
 	    //track.exists = 0;
 	    
 	    //tracks[track_index_y*TRACKCOLS + track_index_x] = track;
+	} else {
+	    car->position.x += car->speed*car->heading.x*dt;
+	    car->position.y += car->speed*car->heading.y*dt;
 	}
     }
-    
-#if 0
-    for (int i = 0; i < TRACKROWS; i++) {
-	for (int j = 0; j < TRACKCOLS; j++) {
-	    Track track = tracks[i*TRACKCOLS + j];
-	    if (track.exists) {
-		if (car->position.x >= track.x && (car->position.x <= track.x + track.width)
-		    && car->position.y >= track.y && (car->position.y <= track.y + track.height)) {
-		    car->heading.y *= -1.0f;
-		    //car->heading.x *= -1.0f;
-		    track.exists = 0;
-		    tracks[i*TRACKCOLS + j] = track;
-		}
-	    }
-	}
-    }
-#endif
+
     car->heading = vec_normalize(car->heading);
+    
     //
 
 }
@@ -458,54 +403,6 @@ void reset_car(Car *car)
 }
 
 
-float float_min(float x, float y)
-{
-    if (x <= y) {
-	return x;
-    }
-    return y;
-}
-
-float float_max(float x, float y)
-{
-    if (x >= y) {
-	return x;
-    }
-    return y;
-}
-
-float distance(float x, float y)
-{
-    float result;
-    result = sqrt((x-y)*(x-y));
-    return result;
-}
-
-void draw_scores(SDL_Renderer *renderer, int score_p1, int score_p2)
-{
-    int score_width = 5;
-    int score_height = 5;
-    Color score_color = {255,255,255,1};
-    for (int i = 0; i < score_p1; i++) {
-	draw_rect(renderer, (float)(SCREENWIDTH/4 + i*score_width*2), (float)30, score_width, score_height, score_color );
-    }
-
-}
-
-static Vec2 vec_normalize(Vec2 in)
-{
-    Vec2 result;
-    float mag = sqrt(in.x*in.x + in.y*in.y);
-    if (mag != 0.0f) {
-	result.x = in.x/mag;
-	result.y = in.y/mag;
-    } else {
-	result.x = 0.0f;
-	result.y = 0.0f;
-    }
-
-    return result;
-}
 
 Track init_track(int x, int y, int exists)
 {
@@ -518,16 +415,4 @@ Track init_track(int x, int y, int exists)
     return result;
 }
 
-void draw_tracks(SDL_Renderer *renderer, Track *tracks)
-{
-    Color blue = {0x00, 0x00, 0xff, 0x00};
-    
-    for (int i = 0; i < TRACKROWS; i++) {
-	for (int j = 0; j < TRACKCOLS; j++) {
-	    Track track = tracks[i*TRACKCOLS + j];
-	    if (track.exists) {
-		draw_rect(renderer, track.x , track.y, track.width-TRACKGAP, track.height-TRACKGAP, blue);
-	    }
-	}
-    }
-}
+
