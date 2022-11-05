@@ -39,6 +39,7 @@ typedef struct {
     float angle;
     int radius;
     float speed;
+    int finished;
 } Car;
 
 typedef enum {

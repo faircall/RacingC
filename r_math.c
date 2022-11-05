@@ -6,6 +6,12 @@ float deg_to_rad(float deg)
     return result;
 }
 
+float rad_to_deg(float rad)
+{
+    float result = 180.0f*rad/MPI;
+    return result;
+}
+
 Vec2 init_vec2(float x, float y)
 {
     Vec2 result;
@@ -50,4 +56,23 @@ Vec2 vec_normalize(Vec2 in)
     }
 
     return result;
+}
+
+float vec_mag(Vec2 a)
+{
+    return sqrt(a.x*a.x + a.y*a.y);
+}
+
+float vec_dot(Vec2 a, Vec2 b)
+{
+    return a.x*b.x + a.y*b.y;
+}
+
+float angle_between(Vec2 a, Vec2 b)
+{
+    float dot = vec_dot(a, b);
+    float cos_theta = dot / (vec_mag(a) * vec_mag(b));
+    float angle = rad_to_deg(acos(cos_theta));
+    return angle;
+    
 }
